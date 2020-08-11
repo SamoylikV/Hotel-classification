@@ -1,100 +1,200 @@
 import requests as r
+from datetime import datetime
 from urllib.parse import urlencode
 import re
 
 base_url = r'https://xn----7sba3acabbldhv3chawrl5bzn.xn--p1ai/displayAccommodation/index?'
 base_url_s = r'https://xn----7sba3acabbldhv3chawrl5bzn.xn--p1ai/displayAccommodation/'
-ptrn1 = r'href=\"/displayAccommodation/([0-9]{1,5})\"'
-ptrn2 = r'([\n\r\t«»]|<.*?>|&#[0-9]{1,};|&[a-z]{1,};|\ufeff)'
-ptrn3 = r'[\s]{2,}'
-data1 = []
+id_pattern = r'href=\"/displayAccommodation/([0-9]{1,5})\"'
+trash_eraser1 = r'([\n\r\t«»]|<.*?>|&#[0-9]{1,};|&[a-z]{1,};|\ufeff)'
+trash_eraser2 = r'[\s]{2,}'
+info_pattern1 = r'<div class="detail-field">[\d\D]*?(?:<\/div>|<\/a>[\s]*<\/span>)'
+costyl_pattern = r'<span class="detail-label">Контактные данные:<\/span>([\d\D]*?)<\/div>'
+good_keys = ['Вид', 'Полное наименование классифицированного объекта',
+             'Cокращенное наименование классифицированного объекта',
+             'Наименование юридического лица/индивидуального предпринимателя', 'Регион', 'ИНН',
+             'ОГРН/ОГРНИП', 'Адрес места нахождения', 'Телефон', 'Факс', 'E-mail', 'Адрес сайта',
+             'Присвоенная категория', 'Регистрационный номер', 'Дата', 'Регистрационный номер свидетельства',
+             'Дата выдачи', 'Срок действия до', 'Наименование', 'Контактные данные', 'Количество номеров', 'ID']
+
+print('Собираем ID гостиниц...')
 
 
-def get_rooms_sum(arr):
-    rooms_sum = 0
-    a = 0
-    for i in arr:
-        if i.isdigit() and a == 0:
-            a += 1
-            rooms_sum += int(i)
-        else:
-            a = max(a - 1, 0)
-    return str(rooms_sum)
-
-
-def get_region_list():
-    res = r.get(base_url).content.decode('utf-8')
-    res = res.split('<datalist id="regions">')[1].split('</datalist>')[0]
-    regions = [i.split('</option>')[0] for i in res.split('<option>')[1:]]
-    return regions
-
-
-def get_data(region):
-    request_params = {'Accommodation[Region]': region, 'Accommodation[Key]': ''}
-    request_params = urlencode(request_params)
+def count_rooms_from_res(res):
+    n = 0
     c = 0
-    data0 = []
+    a = res.split('<td>Количество мест</td>')[1].split(' <!--content-->')[0]
+    a = re.sub(trash_eraser2, ' ', re.sub(trash_eraser1, '', a))
+    for i in a.split(' '):
+        if i.isdigit() and c == 0:
+            c += 1
+            n += int(i)
+        else:
+            c = max(c - 1, 0)
+    return str(n)
+
+
+def get_info_from_id(hotel_id):
+    data = []
+    res = r.get(base_url_s + hotel_id).content.decode('utf-8')
+    data = re.findall(info_pattern1, res)
+    data = [re.sub(trash_eraser2, ' ', re.sub(trash_eraser1, '', i)).strip() for i in data]
+    data.append('Количество номеров: ' + count_rooms_from_res(res))
+    #print(data)
+    data = data[:12] + data[-9:]
+    data0 = dict()
+    for i in data:
+        i = i.split(':')
+        if type(i) != list:
+            data0.update({i[0]: ''})
+        else:
+            data0.update({i[0]: i[1].strip()})
+    data0.update({'ID': hotel_id})
+    if list(data0.keys()) != good_keys:
+        # print(hotel_id)
+        #print(list(data0.keys()))
+        return 0
+    try:
+        data0['Вид'] = data0['Вид'].split(',')[0]
+    except:
+        pass
+    data_ = data0['Дата'].split(' ')
+    data_.pop()
+    if data_[1] == 'янв.':
+        data_[1] = '01'
+    elif data_[1] == 'февр.':
+        data_[1] = '02'
+    elif data_[1] == 'марта':
+        data_[1] = '03'
+    elif data_[1] == 'апр.':
+        data_[1] = '04'
+    elif data_[1] == 'мая':
+        data_[1] = '05'
+    elif data_[1] == 'июня':
+        data_[1] = '06'
+    elif data_[1] == 'июля':
+        data_[1] = '07'
+    elif data_[1] == 'авг.':
+        data_[1] = '08'
+    elif data_[1] == 'сент.':
+        data_[1] = '09'
+    elif data_[1] == 'окт.':
+        data_[1] = '10'
+    elif data_[1] == 'нояб.':
+        data_[1] = '11'
+    elif data_[1] == 'дек.':
+        data_[1] = '12'
+    data_[0] = int(data_[0])
+    data_[1] = int(data_[1])
+    data_[2] = int(data_[2])
+    # print(datetime(data_[2], data_[1], data_[0]))
+    data0['Дата'] = datetime(int(data_[2]), int(data_[1]), (data_[0]))
+    # data0['Дата'] = ''.join(data_)
+
+    data_ = data0['Дата выдачи'].split(' ')
+    data_.pop()
+    if data_[1] == 'янв.':
+        data_[1] = '01'
+    elif data_[1] == 'февр.':
+        data_[1] = '02'
+    elif data_[1] == 'марта':
+        data_[1] = '03'
+    elif data_[1] == 'апр.':
+        data_[1] = '04'
+    elif data_[1] == 'мая':
+        data_[1] = '05'
+    elif data_[1] == 'июня':
+        data_[1] = '06'
+    elif data_[1] == 'июля':
+        data_[1] = '07'
+    elif data_[1] == 'авг.':
+        data_[1] = '08'
+    elif data_[1] == 'сент.':
+        data_[1] = '09'
+    elif data_[1] == 'окт.':
+        data_[1] = '10'
+    elif data_[1] == 'нояб.':
+        data_[1] = '11'
+    elif data_[1] == 'дек.':
+        data_[1] = '12'
+    data_[0] = int(data_[0])
+    data_[1] = int(data_[1])
+    data_[2] = int(data_[2])
+    data0['Дата выдачи'] = datetime(int(data_[2]), int(data_[1]), (data_[0]))
+
+    data_ = data0['Срок действия до'].split(' ')
+    data_.pop()
+    if data_[1] == 'янв.':
+        data_[1] = '01'
+    elif data_[1] == 'февр.':
+        data_[1] = '02'
+    elif data_[1] == 'марта':
+        data_[1] = '03'
+    elif data_[1] == 'апр.':
+        data_[1] = '04'
+    elif data_[1] == 'мая':
+        data_[1] = '05'
+    elif data_[1] == 'июня':
+        data_[1] = '06'
+    elif data_[1] == 'июля':
+        data_[1] = '07'
+    elif data_[1] == 'авг.':
+        data_[1] = '08'
+    elif data_[1] == 'сент.':
+        data_[1] = '09'
+    elif data_[1] == 'окт.':
+        data_[1] = '10'
+    elif data_[1] == 'нояб.':
+        data_[1] = '11'
+    elif data_[1] == 'дек.':
+        data_[1] = '12'
+    data_[0] = int(data_[0])
+    data_[1] = int(data_[1])
+    data_[2] = int(data_[2])
+    data0['Срок действия до'] = datetime(int(data_[2]), int(data_[1]), (data_[0]))
+
+    # print(data0)
+    return data0
+
+
+def get_data():
     old_ids = []
     bad_ids = []
+    ids = [1]
+    ids_all = []
+    page = 1
+    data = []
     while True:
-        c += 1
-        url = base_url + request_params + '&Accommodation_page=' + str(c)
+        url = base_url + '&Accommodation_page=' + str(page)
+        page += 1
         res = r.get(url).content.decode('utf-8')
-        ids = re.findall(ptrn1, res)[::2]
-        if ids == old_ids:
+        ids = re.findall(id_pattern, res)[::2]
+        if old_ids == ids:
             break
-        for i in ids:
-            try:
-                ofs = 0
-                print(i)
-                url0 = base_url_s + i
-                res0 = r.get(url0).content.decode('utf-8')
-                res0 = res0.split(r'<div class="detail-fields">')[1].split(r'<!--content-->')[0] \
-                    .split(r'<div class="detail-field">')
-                res0 = [re.sub(ptrn3, ' ', re.sub(ptrn2, ' ', j)).strip() for j in res0]
-                data = [res0[1].split('Вид: ')[1], res0[2].split('объекта: ')[1], res0[3].split('объекта: ')[1],
-                        res0[4].split('предпринимателя: ')[1], res0[5].split('Регион: ')[1],
-                        res0[6].split('ИНН: ')[1], res0[7].split('ОГРНИП: ')[1], res0[8].split('нахождения: ')[1],
-                        res0[9][9:], res0[10][5:], res0[11][8:],
-                        res0[12].split('сайта: ')[1].split(' ')[0],
-                        res0[13].split('категория: ')[1].split(' Решение')[0],
-                        res0[14].split('номер: ')[1], res0[15].split('Дата: ')[1].split(' Свидетельство')[0],
-                        res0[16].split('свидетельства: ')[1],
-                        res0[17].split('выдачи: ')[1],
-                        res0[18].split('до: ')[1].split(' Аккредитованная')[0]]
-                try:
-                    data.append(res0[19].split('Наименование: ')[1])
-                except:
-                    data.append(res0[20].split('Наименование: ')[1])
-                    ofs = 1
-
-                data.append(get_rooms_sum(res0[20+ofs].split('Количество мест ')[-1].split(' ')))
-                if data[4] == 'Информация':
-                    data[4] = ''
-                print(data)
-
-                data = {'Вид': data[0], 'Полное наименование классифицированного объекта': data[1],
-                        'Cокращенное наименование классифицированного объекта': data[2],
-                        'Наименование юридического лица/индивидуального предпринимателя': data[3],
-                        'Регион': data[4], 'ИНН': data[5], 'ОГРН/ОГРНИП': data[6], 'Адрес места нахождения': data[7],
-                        'Телефон': data[8], 'Факс': data[9], 'E-mail': data[10], 'Адрес сайта': data[11],
-                        'Присвоенная категория': data[12], 'Регистрационный номер': data[13],
-                        'Регистрационный номер свидетельства': data[14], 'Дата выдачи': data[15],
-                        'Срок действия до': data[16], 'Наименование': data[17], 'Контактные данные': data[18],
-                        'Количество номеров': data[19]}
-                data0.append(data)
-
-            except:
-                print('bad id(')
-                bad_ids.append(i)
-
+        ids_all += ids
         old_ids = ids
-    print(bad_ids)
-    return data0, bad_ids
+        if len(ids_all) >= 100:  # для тестов, удалить
+            break  # для тестов, удалить
+    # print(ids_all)
+    c = 0
+    c1 = 1
+    print('ID гостиниц собраны')
+    print('Собираем информацию о гостиницах...')
+    percent = len(ids_all) // 100
+    for hotel_id in ids_all:
+        if c % percent == 0:
+            c1 += 1
+            print(f'{c1}%', end='')
+        try:
+            tmp = get_info_from_id(hotel_id)
+            if not tmp:
+                bad_ids.append(hotel_id)
+            else:
+                data.append(tmp)
+        except:
+            bad_ids.append(hotel_id)
+        c += 1
+    print('100%')
 
-
-
-
-
-# with open('all.json', 'w', encoding='utf-8') as f:
-#     json.dump(data1, f, ensure_ascii=False, indent=4)
+    return data, bad_ids
+# get_data()
